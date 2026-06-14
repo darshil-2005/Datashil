@@ -6,10 +6,10 @@
 using PageID = uint16_t;
 using SlotID = uint16_t;
 
+using Key = uint16_t;
 using Offset = uint16_t;
-using OffsetIndex - uint16_t;
+using OffsetIndex = uint16_t;
 
-using SlotLength = uint16_t;
 using TupleLength = uint16_t;
 using AttributeCount = uint16_t;
 using Byte = std::byte;
@@ -18,10 +18,23 @@ using BitmapSize = uint16_t;
 using OperationStatus = bool;
 using Bool = uint8_t;
 
-struct RecordID {
+using BufferSize = uint16_t;
+
+struct __attribute__((__packed__)) RecordID {
   PageID pid;
   OffsetIndex slot_index;
 };
+
+struct __attribute__((__packed__)) SplitReport {
+  Bool was_split;
+  PageID new_page_id;
+  Key boundary_key;
+};
+
+struct __attribute__((__packed__)) NewPage {
+  Byte* ptr;
+  PageID pid;
+}
 
 enum ErrType {
 
@@ -41,10 +54,11 @@ enum ErrType {
 };
 
 enum class PageType : uint8_t {
-    Invalid = 0,
     Meta = 1,
-    BPlusInternal = 2,
-    BPlusLeaf = 3,
+    InternalPage = 2,
+    LeafPage = 3,
+    FreeSpaceMap = 4,
+    OverflowPage = 5,
 };
 
 template <typename T>

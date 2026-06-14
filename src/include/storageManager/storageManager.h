@@ -1,6 +1,7 @@
 #include <../../commons/types.h>
 #include <../../commons/constants.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 class StorageManager {
   /*
@@ -12,7 +13,9 @@ class StorageManager {
   ~StorageManager();
   Result<bool> ReadPage(PageId pid, Byte* buffer);
   Result<bool> WritePage(PageId pid, const Byte* buffer);
+  Result<PageID> AllocateNewPage();
   private:
+  uint16_t new_page_offset_index;
   int fd_database;
   int fd_logs;
 };

@@ -12,3 +12,8 @@ constexpr std::string DB_PATH  = "./data/engine.db";
 constexpr std::string LOG_PATH = "./data/engine.log";
 constexpr size_t POOL_SIZE = 100;
 constexpr size_t BUFFER_FRAME_META_SIZE = 5;
+
+constexpr size_t TUPLE_SIZE_LIMIT = 1500;
+constexpr size_t TUPLE_HEADER_SIZE = 9;
+
+

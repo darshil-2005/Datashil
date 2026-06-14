@@ -1,7 +1,7 @@
-
 #include <../../commons/types.h>
 #include <../../commons/constants.h>
 #include <../../commons/uitls.h>
+#include <cstring>
 
 // We will need serializer for storing struct into file because if we store directly 
 // the padding will be addded too and Page wont remain the size it is supposed to be.
@@ -32,10 +32,6 @@
 //     1) Leaf Pages/Nodes containing the actual data
 //     2) Internal Pages/Nodes for traversing the BTree.
 // 
-//
-//
-//
-//
 
 struct PageHeader {
   // page type
@@ -44,14 +40,16 @@ struct PageHeader {
   PageID page_id;
 };
 
+constexpr LEAF_PAGE_HEADER_SIZE = 13;
+constexpr SLOT_SIZE = 4;
+
 struct LeafPageHeader {
   // page type
   PageType page_type;
   // page id
   PageID page_id;
-  // free space start
-  Offset free_space_start_offset;
   // free space end
+  // num of bytes from the start of the page to the last free byte.
   Offset free_space_end_offset;
   // slot array size
   uint16_t slot_array_size;
@@ -62,6 +60,12 @@ struct LeafPageHeader {
   // parent pageid
   PageID parent_pid;
 };
+
+constexpr INTERNAL_PAGE_HEADER_SIZE = 7;
+constexpr NUM_KEY_SLOTS = 1021;
+constexpr NUM_CHILD_PAGEID_SLOTS = 1022;
+constexpr KEY_SIZE = 2;
+constexpr CHILD_PTR_SIZE = 2;
 
 struct InternalPageHeader {
   // page type
@@ -74,7 +78,7 @@ struct InternalPageHeader {
   PageID parent_pid;
 };
 
-struct SlotArrayElement {
+struct __attribute__((__packed__)) SlotArrayElement {
   Offset offset;
   uint16_t length;
   // Not clear if we really need this right now since we run compact after every delete
@@ -82,23 +86,25 @@ struct SlotArrayElement {
 };
 
 class LeafPage {
-  LeafPageHeader leaf_page_meta;
   // SlotArrayElement* slot_array;
   // data : slot array | free space | tuples
-  Byte* data;
-
-  Result<SlotID, TupleInsertErr> InsertTuple();
-  Result<DeleteStatus, TupleDeleteErr> DeleteTuple();
-  Result<Tuple, TupleGetErr> GetTuple();
+  RecordID InsertTuple(Byte* page, const Byte *buffer, BufferSize buffer_size, Key key);
+  Bool HandleSplit(Byte* page, Byte* new_page, Byte* buffer, BufferSize buffer_size);
+  uint16_t CheckAvailableSpace(Byte* page);
 };
 
 class InternalPage {
-  // 7 bytes
-  InternalPageHeader internal_page_meta;
-  // 4089 bytes for the keys and values
-  // n = 2044
-  // So there are 1021 key slots and 1022 pointer slots; 
-  Byte* data;
+  // takes the pointer to first byte of the page and the key and return page_id of the page associated with that key in the internal page.
+  PageID GetChildPageID(Byte* page, uint16_t index);
+
+  Bool CheckSlotAvailable(Byte* page, uint16_t key_size);
+  Key* GetKeysStartPointer(Byte* page);
+  PageID* GetChildrenStartPointer(Byte* page);
+  PageID GetValueAtIndex(Byte* page, OffsetIndex index);
+  // Splits the keys in 
+  uint16_t HandleSplit(Byte* old_page, Byte* new_page, Key key_to_insert, PageID page_id_to_insert);
+  Bool InsertKeyValue(Byte* page, Key boundary_key, PageID new_pid);
+  Bool MakePage(Byte* page, Key* keys_ptr, PageID* children_ptr, uint16_t keys_to_take, PageID pid, PageID parent_pid);
 };
 
 

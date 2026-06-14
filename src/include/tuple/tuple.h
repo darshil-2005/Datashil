@@ -7,7 +7,9 @@
 //     2) reinterpret_cast causes fault when fetching unaligned memory on some ARM processors and trigger an intricate time
 //        consuming mechanism on most intel precessors to stick together the required memory bytes.
 
-struct TupleHeader {
+
+
+struct __attribute__((__packed__)) TupleHeader {
   uint16_t attribute_count;
   uint16_t size; 
   Bool overflow;
@@ -18,6 +20,7 @@ class Tuple {
   TupleHeader header;
   uint16_t null_bitmap_size;
   Byte* null_bitmap;
+
   /*
    * This might need complete change if I decide to implement the column swapping with padding mentioned above in the future
    * or maybe we can deal with that at the time table schema is created.
@@ -31,6 +34,7 @@ class Tuple {
    *
    *
    */
+
   Byte* column_offsets;
   Byte* data;
   size_t getBitmapSize(uint_t attribute_count) const;

@@ -19,6 +19,7 @@ class BufferPool {
   ~BufferPool();
   Result<Byte*> RequestPage(PageID pid);
   Result<bool> ReleasePage(PageID pid, bool is_dirty);
+  Result<NewPage> AllocateNewPage();
   
   private:
   StorageManager* storage_manager;
