@@ -22,7 +22,7 @@ struct __attribute__((__packed__)) InternalPageHeader {
 
 namespace InternalPage {
   // takes the pointer to first byte of the page and the key and return page_id of the page associated with that key in the internal page.
-  PageID GetChildPageID(Byte* page, uint16_t index);
+  PageID GetChildPageID(Byte* page, Key key);
 
   Bool CheckSlotAvailable(Byte* page, uint16_t key_size);
   Key* GetKeysStartPointer(Byte* page);

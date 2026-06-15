@@ -85,7 +85,7 @@ SplitReport BTree::FindPageToWrite(PageID pid, Key key, BufferSize buffer_size, 
 
     // The returns the lowest key of the new page to us as boundary key.
     // new_page gets the bigger half of the entries
-    uint16_t boundary_key = LeafPage::HandleSplit(page, new_page.ptr);
+    uint16_t boundary_key = LeafPage::HandleSplit(page, new_page.ptr, new_page.pid);
 
     if (key >= boundary_key) {
       *to_write_page = new_page;
@@ -199,6 +199,29 @@ WriteStatus BTree::WriteChunkOverflow(Byte* page, const Byte *buffer, BufferSize
   } else {
     memcpy(page, buffer, buffer_size);
     return { .written = buffer_size, .overflow_info_store_address = nullptr };
+  };
+};
+
+SearchResult BTree::Search(PageID pid, Key key) {
+
+  Result<Byte*> request_page_response = buffer_pool->RequestPage(pid);
+  // Handle errors
+
+  Byte* page = request_page_response->value;
+  PageHeader* general_page_header = reinterpret_cast<PageHeader*>(page);
+
+  if (general_page_header->page_type == PageType::InternalPage) {
+    
+    PageID child_pid = InternalPage::GetChildPageID(page, key);
+    buffer_pool->ReleasePage(pid, false);
+    return BTree::Search(pid, key);
+
+  } else if (general_page_header->page_type == PageType::LeafPage) {
+
+    SearchResult result = LeafPage::Search(page, key);
+    buffer_pool->ReleasePage(pid, false);
+    return result;
+
   };
 };
 

@@ -26,7 +26,7 @@
  *
  */
 
-constexpr uint16_t LEAF_PAGE_HEADER_SIZE = 14;
+constexpr uint16_t LEAF_PAGE_HEADER_SIZE = 11;
 constexpr uint16_t SLOT_SIZE = 4;
 constexpr uint16_t OVERFLOW_PAGE_HEADER_SIZE = 6;
 constexpr uint16_t OVERFLOW_PAGE_OVERFLOW_INFO_OFFSET = 3;
@@ -63,18 +63,17 @@ struct __attribute__((__packed__)) LeafPageHeader {
   // slot array size
   uint16_t slot_array_size;
   // sibling prev pageid
-  PageID prev_pid;
+  PageID left_pid;
   // sibling next pageid
-  PageID next_pid;
-  // overflow
-  Bool overflow;
-  PageID next_page_id;
+  PageID right_pid;
 };
 
 namespace LeafPage {
   // SlotArrayElement* slot_array;
   // data : slot array | free space | tuples
   RecordID InsertTuple(Byte* page, const Byte *buffer, BufferSize buffer_size, Key key);
-  Bool HandleSplit(Byte* page, Byte* new_page, Byte* buffer, BufferSize buffer_size);
+  Key HandleSplit(Byte* page, Byte* new_page);
+  bool MakePage(Byte* page, SlotArrayElement* slot_array_start, uint16_t slot_array_size, Byte* buffer, PageID pid, PageID left_pid, PageID right_pid);
   uint16_t CheckAvailableSpace(Byte* page);
+  SearchResult Search(Byte* page, Key key);
 };

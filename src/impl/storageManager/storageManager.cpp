@@ -1,5 +1,4 @@
 #include "../../include/storageManager/storageManager.h"
-namespace fs = std::filesystem;
 
 // Page ID: 0 will now be meta data pages.
 
@@ -15,7 +14,10 @@ bool StorageManager::Bootstrap() {
   } else {
     fd_database = open(DB_PATH, O_RDWR | O_CREAT | O_DIRECT, S_IRUSR | S_IWUSR);
     uint16_t off_start = 2;
-    pwrite(fd_database, &off_start, sizeof(off_start), 0);
+
+    Byte buffer[PAGE_SIZE];
+    memcpy(buffer, &off_start, sizeof(new_page_offset_index));
+    pwrite(fd_database, buffer, PAGE_SIZE, 0);
   };
 
   fd_logs = open(LOG_PATH, O_WRONLY | O_CREAT | O_APPEND | O_DIRECT,
@@ -33,6 +35,15 @@ bool StorageManager::Bootstrap() {
     return false;
   };
 
+  StorageManager::RefreshNewPageOffsetIndex();
+  return true;
+};
+
+uint16_t StorageManager::GetNewPageOffsetIndex() {
+  return new_page_offset_index;
+};
+
+void StorageManager::RefreshNewPageOffsetIndex() {
   Byte buffer[PAGE_SIZE];
   Result<bool> read_result = ReadPage(0, buffer);
   if (read_result.err != ErrType::None) {
@@ -40,7 +51,7 @@ bool StorageManager::Bootstrap() {
   };
   
   memcpy(&new_page_offset_index, buffer, sizeof(uint16_t));
-  return true;
+  return;
 };
 
 Result<bool> StorageManager::ReadPage(PageID pid, Byte *buffer) {
@@ -101,6 +112,13 @@ StorageManager::~StorageManager() {
   }
 };
 
+void StorageManager::SetNewPageOffsetIndex(uint16_t new_offset) {
+  Byte buffer[PAGE_SIZE];
+  memcpy(buffer, &new_offset, sizeof(new_page_offset_index));
+  pwrite(fd_database, buffer, PAGE_SIZE, 0);
+  return;
+};
+
 Result<PageID> StorageManager::AllocateNewPage() {
 
   Offset offset = new_page_offset_index * PAGE_SIZE;
@@ -110,7 +128,7 @@ Result<PageID> StorageManager::AllocateNewPage() {
     // handle errors
   };
 
+  StorageManager::SetNewPageOffsetIndex(new_page_offset_index + 1);
   new_page_offset_index++;
-  pwrite(fd_database, &new_page_offset_index, sizeof(new_page_offset_index), 0);
   return { .value = (uint16_t)(new_page_offset_index - 1), .err = ErrType::None };  
 };

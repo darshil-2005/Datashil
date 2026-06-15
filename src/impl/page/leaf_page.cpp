@@ -37,110 +37,115 @@ SlotArrayElement* upper_bound(const SlotArrayElement* start, const SlotArrayElem
   return start + ans;
 };
 
-// The caller assumes that this function can store atleast 1 tuple and creates chain of tuples if required.
-// All of the chaining into overflow pages is abstracted away by this function.
-RecordID LeafPage::InsertTuple(Byte* page, const Byte *buffer, BufferSize buffer_size, Key key) {
+Key LeafPage::HandleSplit(Byte* old_page, Byte* new_page, PageID new_pid) {
 
-  PageHeader* general_page_header = reinterpret_cast<PageHeader*>(page);
+  Byte* buffer[PAGE_SIZE];
+  memmove(buffer, old_page, PAGE_SIZE);
 
-  uint16_t page_data_limit = (general_page_header->page_type == PageType::LeafPage) 
-    ? LEAF_TUPLE_DATA_SIZE_MAX 
-    : OVERFLOW_TUPLE_DATA_SIZE_MAX;  
+  uint16_t threshold = (PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) / 2;
+  uint16_t consumed_space = 0;
 
-  uint16_t page_header_size = (general_page_header->page_type == PageType::LeafPage) 
-    ? LEAF_PAGE_HEADER_SIZE 
-    : OVERFLOW_PAGE_HEADER_SIZE;
+  LeafPageHeader* page_header = reinterpret_cast<LeafPageHeader*>(buffer);
+  SlotArrayElement* slot_array_start = old_page + LEAF_PAGE_HEADER_SIZE;
+  SlotArrayElement* slot_array_new_page_start = old_page + LEAF_PAGE_HEADER_SIZE;
 
-  uint16_t slot_array_size = (general_page_header->page_type == PageType::LeafPage) 
-    ? reinterpret_cast<LeafPageHeader*>(page)->slot_array_size 
-    : reinterpret_cast<OverflowPageHeader*>(page)->slot_array_size;
-
-  Offset free_space_end_offset = (general_page_header->page_type == PageType::LeafPage)
-    ? reinterpret_cast<LeafPageHeader*>(page)->free_space_end_offset
-    : reinterpret_cast<OverflowPageHeader*>(page)->free_space_end_offset;
-
-  Bool* overflow = (general_page_header->page_type == PageType::LeafPage)
-    ? reinterpret_cast<LeafPageHeader*>(page)->overflow
-    : reinterpret_cast<OverflowPageHeader*>(page)->overflow;
-
-  PageID* next_page_id = (general_page_header->page_type == PageType::LeafPage)
-    ? reinterpret_cast<LeafPageHeader*>(page)->next_page_id
-    : reinterpret_cast<OverflowPageHeader*>(page)->next_page_id;
-
-
-  uint16_t available_space = CheckAvailableSpace(page);
-
-    if (buffer_size <= page_data_limit) {
-      // the tuple is already made we just have to place the data and the overflow info is inside the slot elements rather than the tuples.
-      if (buffer_size + SLOT_SIZE <= available_space) {
-        // store all data here in this page.
-        // set overflow false in the slot array element
-
-        uint16_t data_size = buffer_size;
-              
-        SlotArrayElement* slot_array_start = page + page_header_size;
-        SlotArrayElement* slot_array_end = page + (SLOT_SIZE * slot_array_size);
-
-        SlotArrayElement* it = upper_bound(slot_array_start, slot_array_end, page, key);
-        if (it != slot_array_end) memmove(it+SLOT_SIZE, it, (slot_array_end - it) * SLOT_SIZE);
-
-        it->offset = free_space_end_offset - data_size + 1;
-        it->length = data_size;
-        it->overflow = 0;
-        it->next_record = { .pid = 0, .slot_index = 0 };
-
-        memcpy(page + it->offset, buffer, data_size); 
-
-        return { .pid = general_page_header->page_id, .slot_index = (OffsetIndex)(it - slot_array_start) };
-
-      } else {
-        // store data of size available_space - SLOT_SIZE here
-        // set overflow flag to true and recurse
-        // set the next_record to the returned recordID
-        uint16_t data_size = available_space - SLOT_SIZE;
-
-        SlotArrayElement* slot_array_start = page + page_header_size;
-        SlotArrayElement* slot_array_end = page + (SLOT_SIZE * slot_array_size);
-
-        SlotArrayElement* it = upper_bound(slot_array_start, slot_array_end, page, key);
-        if (it != slot_array_end) memmove(it+SLOT_SIZE, it, (slot_array_end - it) * SLOT_SIZE);
-
-        it->offset = free_space_end_offset - data_size + 1;
-        it->length = data_size;
-
-        memcpy(page + it->offset, buffer, data_size); 
-
-        if (overflow == 0) {
-          NewPage new_page = B
-
-          
-        };
-
-
-
-        // RecordID LeafPage::InsertTuple(Byte* page, const Byte *buffer, BufferSize buffer_size, Key key) {
-        RecordID overflow_record = InsertTuple(
-
-
-
-      };
-    } else {
-      if (page_data_limit + SLOT_SIZE <= available_space) {
-        // store page_data_limit - SLOT_SIZE sized data here
-        // set overflow flag to true and recurse
-        // set the next_record to the returned recordID
-      } else {
-        // store available_space sized data here
-        // set overflow flag to true and recurse
-        // set the next_record to the returned recordID
-      }
+  for (int i=0; i < page_header->slot_array_size; i++) {
+    SlotArrayElement* current = slot_array_start[i];
+    consumed_space = consumed_space + current->length;
+    if (consumed_space > threshold) {
+      slot_array_new_page_start = current + 1;      
     };
+  };
 
+  LeafPage::MakePage(old_page, slot_array_start, 
+      (uint16_t)(slot_array_new_page_start - slot_array_start),
+      buffer, page_header->page_id, page_header->left_pid, new_pid);
 
-  SlotArrayElement* slot_array_start = page + LEAF_PAGE_HEADER_SIZE;
-  SlotArrayElement* slot_array_end = page + (SLOT_SIZE * page_header->slot_array_size);
+  LeafPage::MakePage(new_page, slot_array_new_page_start, 
+      (uint16_t)((slot_array_start + page_header->slot_array_size) - slot_array_new_page_start),
+      buffer, new_pid, page_header->page_id, page_header->right_id);
 
-  SlotArrayElement* it = upper_bound(slot_array_start, slot_array_end, page, key);
-  if (it != slot_array_end) memmove(it+SLOT_SIZE, it, (slot_array_end - it) * SLOT_SIZE);
-
+  Key boundary_key = LeafPage::GetKeyFromSlotElement(buffer, slot_array_new_page_start);
+  return boundary_key;
 };
+
+bool LeafPage::MakePage(Byte* page, SlotArrayElement* slot_array_start, uint16_t slot_array_size, Byte* buffer, PageID pid, PageID left_pid, PageID right_pid) {
+
+  Offset free_space_end_offset = PAGE_SIZE - 1;
+  LeafPageHeader* page_header = reinterpret_cast<LeafPageHeader*>(page);
+
+  page_header->slot_array_size = slot_array_size;
+  page_header->page_type = PageType::LeafPage;
+  page_header->page_id = pid;
+  page_header->left_pid = left_pid;
+  page_header->right_pid = right_pid;
+
+  SlotArrayElement* slot_array = reinterpret_cast<SlotArrayElement*>(page + LEAF_PAGE_HEADER_SIZE);
+
+  for (int i=0; i<slot_array_size; i++) {
+    Offset offset = slot_array_start[i]->offset;
+    TupleLength length = slot_array_start[i]->length;
+
+    memcpy(page + free_space_end_offset - length + 1, buffer + offset, length); 
+    slot_array[i]->offset = free_space_end_offset - length + 1;
+    slot_array[i]->length = length;
+    free_space_end_offset = slot_array[i]->offset;
+  };
+
+  page_header->free_space_end_offset = free_space_end_offset;
+  
+  return true;
+};
+
+SlotArrayElement* lower_bound(const SlotArrayElement* start, const SlotArrayElement* end, Byte* page, Key x) {
+
+  int16_t n = end - start;
+  int16_t l = 0;
+  int16_t r = n - 1;
+  int16_t ans = n;
+
+  while (l <= r) {
+    uint16_t mid = l + (r - l) / 2;
+    SlotArrayElement* element = start + mid;
+    Byte* tuple = page + element->offset;
+    Key* key = reinterpret_cast<Key*>(tuple + TUPLE_HEADER_SIZE); 
+    if (*key < x) {
+      l = mid + 1;
+    } else {
+      ans = mid;
+      r = mid - 1;
+    };
+  };
+
+  return start + ans;
+};
+
+Key GetKeyFromSlotElement(Byte* page, SlotArrayElement* element) {
+  uint16_t key;
+  Byte* key_address = page + element->offset + TUPLE_HEADER_SIZE;
+  memcpy(&key, key_address, sizeof(uint16_t));
+  return key;
+};
+
+SearchResult LeafPage::Search(Byte* page, Key key) {
+  
+  LeafPageHeader* page_header = reinterpret_cast<LeafPageHeader*>(page);
+  SlotArrayElement* slot_array_start = page + LEAF_PAGE_HEADER_SIZE;
+  SlotArrayElement* slot_array_end = slot_array_start + page_header->slot_array_size;
+  SlotArrayElement* search_result = lower_bound(slot_array_start, slot_array_end, page, key);
+
+  if (search_result == slot_array_end) {
+    return { .size = 0, .ptr = nullptr };
+  };
+
+  Key returned_key = LeafPage::GetKeyFromSlotElement(page, search_result);
+
+  if (returned_key == key) {
+    return { .size = search_result->length, .ptr = page + search_result->offset };
+  };
+
+  return { .size = 0, .ptr = nullptr };
+};
+
+
+

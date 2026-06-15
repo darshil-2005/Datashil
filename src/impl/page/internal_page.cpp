@@ -22,7 +22,7 @@ PageID InternalPage::GetValueAtIndex(Byte* page, OffsetIndex index) {
   return res;
 };
 
-PageID InternalPage::GetChildPageID(Byte* page, uint16_t key) {
+PageID InternalPage::GetChildPageID(Byte* page, Key key) {
   InternalPageHeader* page_header = reinterpret_cast<InternalPageHeader*>(page);
   Key* key_start = GetKeysStartPointer(page);
   Key* key_end = key_start + page_header->num_keys;
