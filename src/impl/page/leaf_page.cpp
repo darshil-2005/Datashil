@@ -248,3 +248,266 @@ size_t PayloadStream::NextBytes(Byte* buffer, size_t n) {
   buffer_pool->ReleasePage(curr_pid, false);
   return total_read_this_call;
 };
+
+// Takes in a buffer [data] of size buffer_size and writes it in the leaf page.
+WriteStatus LeafPage::WriteChunkLeaf(Byte* page, const Byte *buffer, BufferSize buffer_size, Key key) {
+
+  // We know the minimum space is available because otherwise node would have split.
+  uint16_t data_size = std::min(SLOT_SIZE + TUPLE_HEADER_SIZE + buffer_size, MAX_LEAF_PAGE_DATA);
+  uint16_t available_spac e = LeafPage::CheckAvailableSpace(page);
+  LeafPageHeader* page_header = reinterpret_cast<LeafPageHeader*>(page);
+  
+  if (data_size <= available_space) {
+
+    uint16_t payload_size = data_size - SLOT_SIZE;
+
+    SlotArrayElement* slot_array_start = reinterpret_cast<SlotArrayElement*>(page + LEAF_PAGE_HEADER_SIZE);
+    SlotArrayElement* slot_array_end = reinterpret_cast<SlotArrayElement*>(page + LEAF_PAGE_HEADER_SIZE + (SLOT_SIZE * page_header->slot_array_size));
+
+    SlotArrayElement* it = LeafPage::upper_bound(slot_array_start, slot_array_end, page, key);
+
+    if (it != slot_array_end) memmove(it+1, it, (slot_array_end - it) * SLOT_SIZE);
+    
+    it->offset = page_header->free_space_end_offset - payload_size + 1;
+    it->length = payload_size;
+
+    page_header->free_space_end_offset = it->offset - 1;
+    page_header->slot_array_size++;
+
+    uint32_t size = static_cast<uint32_t>(buffer_size);    
+    memcpy(page + it->offset + sizeof(OverflowInfo), &size, sizeof(size));
+    memcpy(page + it->offset + TUPLE_HEADER_SIZE, buffer, payload_size - TUPLE_HEADER_SIZE); 
+    TupleHeader* th = reinterpret_cast<TupleHeader*>(page + it->offset);
+
+    return { .written = (uint16_t)(payload_size - TUPLE_HEADER_SIZE), .overflow_info_store_address = page + it->offset };
+
+  } else {
+
+    uint16_t payload_size = available_space - SLOT_SIZE;
+
+    SlotArrayElement* slot_array_start = reinterpret_cast<SlotArrayElement*>(page + LEAF_PAGE_HEADER_SIZE);
+    SlotArrayElement* slot_array_end = reinterpret_cast<SlotArrayElement*>(page + LEAF_PAGE_HEADER_SIZE + (SLOT_SIZE * page_header->slot_array_size));
+
+    SlotArrayElement* it = LeafPage::upper_bound(slot_array_start, slot_array_end, page, key);
+    if (it != slot_array_end) memmove(it+1, it, (slot_array_end - it) * SLOT_SIZE);
+
+    it->offset = page_header->free_space_end_offset - payload_size + 1;
+    it->length = payload_size;
+
+    page_header->free_space_end_offset = it->offset - 1;
+    page_header->slot_array_size++;
+
+    uint32_t size = static_cast<uint32_t>(buffer_size);    
+    memcpy(page + it->offset + sizeof(OverflowInfo), &size, sizeof(size));
+    memcpy(page + it->offset + TUPLE_HEADER_SIZE, buffer, (uint16_t)(payload_size - TUPLE_HEADER_SIZE)); 
+    return { .written = (uint16_t)(payload_size - TUPLE_HEADER_SIZE), .overflow_info_store_address = page + it->offset };
+  };
+};
+
+WriteStatus LeafPage::WriteChunkOverflow(Byte* page, const Byte *buffer, BufferSize buffer_size) {
+
+  if (buffer_size + OVERFLOW_PAGE_HEADER_SIZE > PAGE_SIZE) {
+    uint16_t written_size = PAGE_SIZE - OVERFLOW_PAGE_HEADER_SIZE;
+    memcpy(page + OVERFLOW_PAGE_HEADER_SIZE, buffer, written_size);
+    return { .written = written_size, .overflow_info_store_address = page + OVERFLOW_PAGE_OVERFLOW_INFO_OFFSET }; 
+
+  } else {
+    memcpy(page + OVERFLOW_PAGE_HEADER_SIZE, buffer, buffer_size);
+    return { .written = buffer_size, .overflow_info_store_address = nullptr };
+  };
+};
+
+BorrowQuery LeafPage::CanLendFromRight(PageID pid, uint16_t needed) {
+  
+  Request<Byte*> page_request = buffer_pool->RequestPage(pid);
+
+  // handle errors
+
+  Byte* page = page_request.value;
+  uint16_t usedspace = LeafPage::GetCurrentUsedSpace(page);
+
+  LeafPageHeader* page_header = reinterpret_cast<LeafPageheader*>(page);
+
+  SlotArrayElement* curr = LeafPage::GetLastSlotArrayElement(page);
+  SlotArrayElement* rev_end = LeafPage::GetSlotArrayReverseEnd(page);
+  uint16_t count_space = 0;
+  uint16_t brw_count = 0;
+
+  while (count_space < needed) {
+
+    if (curr == rev_end) {
+      break;
+    };
+
+    if (curr->is_deleted > 0) {
+      curr--;
+      continue;
+    };
+
+    uint16_t curr_size = curr->length;
+    usedspace -= curr_size;
+    
+    if (usedspace <= LEAF_PAGE_UNDERFLOW_THRESHOLD) {
+      buffer_pool->ReleasePage(pid, false);
+      return { .can_borrow = false, .borrow_amount = 0, .lender = pid };
+    };
+
+    count_space += curr_size;
+    brw_count++;
+    curr--;
+    
+    if (count_space >= needed) {
+      buffer_pool->ReleasePage(pid, false);
+      return { .can_borrow = true, .borrow_amount = brw_count, .lender = pid };
+    };
+  };
+
+  buffer_pool->ReleasePage(pid, false);
+  return { .can_borrow = false, .borrow_amount = 0, .lender = pid };
+};
+
+BorrowQuery LeafPage::CanLendFromLeft(PageID pid, uint16_t needed) {
+  
+  Request<Byte*> page_request = buffer_pool->RequestPage(pid);
+
+  // handle errors
+
+  Byte* page = page_request.value;
+  uint16_t usedspace = LeafPage::GetCurrentUsedSpace(page);
+
+  LeafPageHeader* page_header = reinterpret_cast<LeafPageheader*>(page);
+
+  SlotArrayElement* curr = LeafPage::GetFirstSlotArrayElement(page);
+  SlotArrayElement* end = LeafPage::GetSlotArrayEnd(page);
+  uint16_t count_space = 0;
+  uint16_t brw_count = 0;
+
+  while (count_space < needed) {
+
+    if (curr == end) {
+      break;
+    };
+
+    if (curr->is_deleted > 0) {
+      curr++;
+      continue;
+    };
+
+    uint16_t curr_size = curr->length;
+    usedspace -= curr_size;
+    
+    if (usedspace <= LEAF_PAGE_UNDERFLOW_THRESHOLD) {
+      buffer_pool->ReleasePage(pid, false);
+      return { .can_borrow = false, .borrow_amount = 0, .lender = pid };
+    };
+
+    count_space += curr_size;
+    brw_count++;
+    curr++;
+    
+    if (count_space >= needed) {
+      buffer_pool->ReleasePage(pid, false);
+      return { .can_borrow = true, .borrow_amount = brw_count, .lender = pid };
+    };
+  };
+
+  buffer_pool->ReleasePage(pid, false);
+  return { .can_borrow = false, .borrow_amount = 0, .lender = pid };
+};
+
+Key LeafPage::HandleLeftBorrow(PageID pid, BorrowQuery borrow_report) {
+
+  Result<Byte*> left_sibling_request = buffer_pool->RequestPage(borrow_report.lender);
+  // handle errors
+  Byte* left_sib_page = left_sibling_request.value;
+
+  Result<Byte*> page_request = buffer_pool->RequestPage(pid);
+  // handle errors
+  Byte* page = page_request.value;
+
+  LeafPageHeader* sib_header = reinterpret_cast<LeafPageHeader*>(left_sib_page);
+
+  SlotArrayElement* sib_curr = LeafPage::GetLastSlotArrayElement(left_sib_page);
+
+  while (borrow_amount) {
+
+    if (sib_curr->is_deleted > 0) {
+      sib_curr--;
+      continue;
+    };
+    
+    // insert tuple from the sibling to this page and defragment if needed.
+
+    sib_header->garbage_bytes += sib_curr->length;
+    sib_curr->is_deleted = 1;
+    sib_curr--;
+    borrow_amount--;
+  };
+
+  Key boundary_key = LeafPage::GetPageFirstKey(page);
+
+  buffer_pool->ReleasePage(borrow_report->lender, true);
+  buffer_pool->ReleasePage(pid, true);
+
+  return boundary_key;
+};
+
+
+Key LeafPage::HandleRightBorrow(PageID pid, BorrowQuery borrow_report) {
+
+  Result<Byte*> right_sibling_request = buffer_pool->RequestPage(borrow_report.lender);
+  // handle errors
+  Byte* right_sib_page = left_sibling_request.value;
+
+  Result<Byte*> page_request = buffer_pool->RequestPage(pid);
+  // handle errors
+  Byte* page = page_request.value;
+
+  LeafPageHeader* sib_header = reinterpret_cast<LeafPageHeader*>(right_sib_page);
+
+  SlotArrayElement* sib_curr = LeafPage::GetFirstSlotArrayElement(right_sib_page);
+
+  while (borrow_amount) {
+
+    if (sib_curr->is_deleted > 0) {
+      sib_curr++;
+      continue;
+    };
+    
+    // insert tuple from the sibling to this page and defragment if needed.
+
+    sib_header->garbage_bytes += sib_curr->length;
+    sib_curr->is_deleted = 1;
+    sib_curr++;
+    borrow_amount--;
+  };
+
+  Key boundary_key = LeafPage::GetPageFirstKey(page);
+
+  buffer_pool->ReleasePage(borrow_report->lender, true);
+  buffer_pool->ReleasePage(pid, true);
+
+  return boundary_key;
+};
+
+void MergePages(PageID to_pid, PageID from_pid) {
+  
+  Result<Byte*> to_page_request = buffer_pool->RequestPage(to_pid);
+  // handle errors
+  Byte* to_page = to_page_request.value;
+
+  Result<Byte*> from_page_request = buffer_pool->RequestPage(from_pid);
+  // handle errors
+  Byte* from_page = from_page_request.value;
+
+  
+  // Iterate over the from_page tuples and insert them into the to_page using the insert function.
+
+
+  
+
+
+
+
+};
+

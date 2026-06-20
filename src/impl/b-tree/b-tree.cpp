@@ -1,4 +1,3 @@
-
 #include "../../include/b-tree/b-tree.h"
 
 // b-tree only talks to buffer pool so buffer pool need to allocate fresh page
@@ -86,10 +85,10 @@ SplitReport BTree::FindPageToWrite(PageID pid, Key key, BufferSize buffer_size, 
   if (current_page_header->page_type == PageType::LeafPage) {
 
     uint16_t available_space = LeafPage::CheckAvailableSpace(page);
-    uint16_t min_entry = SLOT_SIZE + TUPLE_HEADER_SIZE + std::min(MIN_LEAF_PAGE_DATA, buffer_size);
+    uint16_t min_entry = std::min(MIN_LEAF_PAGE_DATA, SLOT_SIZE + TUPLE_HEADER_SIZE + buffer_size);
 
     if (min_entry <= available_space) {
-      *to_write_page = {.ptr = page, .pid = current_page_header->page_id};
+      *to_write_page = { .ptr = page, .pid = current_page_header->page_id };
       return {
           .was_split = 0,
           .new_page_id = 0,
@@ -163,74 +162,6 @@ SplitReport BTree::FindPageToWrite(PageID pid, Key key, BufferSize buffer_size, 
   };
 };
 
-// Takes in a buffer [data] of size buffer_size and writes it in the leaf page.
-WriteStatus BTree::WriteChunkLeaf(Byte* page, const Byte *buffer, BufferSize buffer_size, Key key) {
-
-  // We know the minimum space is available because otherwise node would have split.
-  uint16_t data_size = SLOT_SIZE + TUPLE_HEADER_SIZE + std::min(buffer_size, MAX_LEAF_PAGE_DATA);
-  uint16_t available_space = LeafPage::CheckAvailableSpace(page);
-  LeafPageHeader* page_header = reinterpret_cast<LeafPageHeader*>(page);
-  
-  if (data_size <= available_space) {
-
-    uint16_t payload_size = TUPLE_HEADER_SIZE + std::min(buffer_size, MAX_LEAF_PAGE_DATA);
-
-    SlotArrayElement* slot_array_start = reinterpret_cast<SlotArrayElement*>(page + LEAF_PAGE_HEADER_SIZE);
-    SlotArrayElement* slot_array_end = reinterpret_cast<SlotArrayElement*>(page + LEAF_PAGE_HEADER_SIZE + (SLOT_SIZE * page_header->slot_array_size));
-
-    SlotArrayElement* it = LeafPage::upper_bound(slot_array_start, slot_array_end, page, key);
-
-    if (it != slot_array_end) memmove(it+1, it, (slot_array_end - it) * SLOT_SIZE);
-    
-    it->offset = page_header->free_space_end_offset - payload_size + 1;
-    it->length = payload_size;
-
-    page_header->free_space_end_offset = it->offset - 1;
-    page_header->slot_array_size++;
-
-    uint32_t size = static_cast<uint32_t>(buffer_size);    
-    memcpy(page + it->offset + sizeof(OverflowInfo), &size, sizeof(size));
-    memcpy(page + it->offset + TUPLE_HEADER_SIZE, buffer, payload_size - TUPLE_HEADER_SIZE); 
-    TupleHeader* th = reinterpret_cast<TupleHeader*>(page + it->offset);
-
-    return { .written = (uint16_t)(payload_size - TUPLE_HEADER_SIZE), .overflow_info_store_address = page + it->offset };
-
-  } else {
-
-    uint16_t payload_size = available_space - SLOT_SIZE;
-
-    SlotArrayElement* slot_array_start = reinterpret_cast<SlotArrayElement*>(page + LEAF_PAGE_HEADER_SIZE);
-    SlotArrayElement* slot_array_end = reinterpret_cast<SlotArrayElement*>(page + LEAF_PAGE_HEADER_SIZE + (SLOT_SIZE * page_header->slot_array_size));
-
-    SlotArrayElement* it = LeafPage::upper_bound(slot_array_start, slot_array_end, page, key);
-    if (it != slot_array_end) memmove(it+1, it, (slot_array_end - it) * SLOT_SIZE);
-
-    it->offset = page_header->free_space_end_offset - payload_size + 1;
-    it->length = payload_size;
-
-    page_header->free_space_end_offset = it->offset - 1;
-    page_header->slot_array_size++;
-
-    uint32_t size = static_cast<uint32_t>(buffer_size);    
-    memcpy(page + it->offset + sizeof(OverflowInfo), &size, sizeof(size));
-    memcpy(page + it->offset + TUPLE_HEADER_SIZE, buffer, (uint16_t)(payload_size - TUPLE_HEADER_SIZE)); 
-    return { .written = (uint16_t)(payload_size - TUPLE_HEADER_SIZE), .overflow_info_store_address = page + it->offset };
-  };
-};
-
-WriteStatus BTree::WriteChunkOverflow(Byte* page, const Byte *buffer, BufferSize buffer_size) {
-
-  if (buffer_size + OVERFLOW_PAGE_HEADER_SIZE > PAGE_SIZE) {
-    uint16_t written_size = PAGE_SIZE - OVERFLOW_PAGE_HEADER_SIZE;
-    memcpy(page + OVERFLOW_PAGE_HEADER_SIZE, buffer, written_size);
-    return { .written = written_size, .overflow_info_store_address = page + OVERFLOW_PAGE_OVERFLOW_INFO_OFFSET }; 
-
-  } else {
-    memcpy(page + OVERFLOW_PAGE_HEADER_SIZE, buffer, buffer_size);
-    return { .written = buffer_size, .overflow_info_store_address = nullptr };
-  };
-};
-
 PayloadStream BTree::Search(PageID pid, Key key) {
 
   Result<Byte*> request_page_response = buffer_pool->RequestPage(pid);
@@ -259,4 +190,187 @@ PayloadStream BTree::Search(PageID pid, Key key) {
 
   return PayloadStream();
 };
+
+DeleteStatus BTree::Delete(PageID pid, Key key) {
+
+  Result<NewPage> page_request = buffer_pool->RequestPage(pid);
+
+  // handle errors
+  
+  Byte* page = page_request.value.ptr;
+  PageHeader* page_header = reinterpret_cast<PageHeader*>(page);
+
+  if (page_header->page_type == PageType::InternalPage) {
+
+    PageID child_pid = InternalPage::GetChildPageID(page, key);
+    /*
+     * Because the database is single threaded we can release this page for now since no one else will change it.
+     * But we wont for this implementation since no one else will access the bufferpool accept this thread and the height of the btree is at max 5.
+     * */
+
+    /*
+     *  DeleteStatus {
+     *    bool underflown;
+     *    PageType page_type;
+     *    uint16_t current_size; // size of slot_array + tuples (for leaf page)
+     *  }
+     *
+     * */
+    DeleteStatus report = BTree::Delete(child_pid, key);
+
+
+    /*
+     * Now we need to check if the child is underflown, if he is we have to decide whether to borrow or merge or let the child stay in underflow state.
+     * */
+
+    // Get left sibling of the current child
+    // See if we can borrow from it.
+    // if yes then do the borrowing and change this nodes key_boundary for both children.
+    // if no then go all this for the right sibling.
+    // if that does not succeed then we must merge.
+    // merge:
+    // merge with the left child.
+    // if no left child then merge with the right child
+
+    /*
+     * BorrowQuery {
+     *  can_borrow;
+     *  borrow_amount;
+     *  lender;
+     * }
+     *
+     * */
+
+    if (report.page_type == PageType::LeafPage) {
+      if (report.underflown) {
+
+        Result<PageID> left_pid_check = InternalPage::GetLeafLeftSibling(page, child_pid);
+
+        if (left_pid_check.err == ErrType::None) {
+          uint16_t needed = (LEAF_UNDERFLOW_THRESHOLD + 1) - report.current_size;
+          // Can i borrow from the left sibling more than or equal to needed data?
+          BorrowQuery borrow_query_report = LeafPage::CanLendFromRight(left_pid_check.value, needed);
+
+          if (borrow_query_report.can_borrow) {
+            Key new_boundary_key = LeafPage::HandleLeftBorrow(child_pid, borrow_report);
+            // Set new value for the key that separates lender | child_pid
+            InternalPage::SetNewBoundaryKey(page, new_boundary_key, borrow_query_report.lender, child_pid);
+
+            // return 0 cause its not relevant
+            return { .underflown = false, .page_type = PageType::InternalPage, .current_size = 0 }
+          };
+        };
+
+        Result<PageID> right_pid_check = InternalPage::GetLeafRightSibling(page, child_pid);
+
+        if (right_pid_check.err == ErrType::None) {
+          uint16_t needed = (LEAF_UNDERFLOW_THRESHOLD + 1) - report.current_size;
+          // Can i borrow from the left sibling more than or equal to needed data?
+          BorrowQuery borrow_query_report = LeafPage::CanLendFromLeft(right_pid_check.value, needed);
+
+          if (borrow_query_report.can_borrow) {
+            Key new_boundary_key = LeafPage::HandleRightBorrow(borrow_report);
+            InternalPage::SetNewBoundaryKey(page, new_boundary_key, child_pid, borrow_query_report.lender)
+
+            return { .underflown = false, .page_type = PageType::InternalPage, .current_size = 0 }
+          };
+        };
+
+        // Now we must merge
+        if (left_pid_check.err == ErrType::None) {
+          // Copy all data from the second arg page to the first arg page because that is easier.
+          LeafPage::MergePages(left_pid_check.value, child_pid);
+          InternalPage::DeleteKeyAndChildPtr(page, child_pid, left_pid_check.value);
+          uint16_t usedspace;
+          bool underflow_happened = InternalPage::CheckUnderflow(page, usedspace);
+          // return appropriate response here: underflow or no-underflow
+          return { .underflown = underflow_happened, .page_type = PageType::InternalPage, .current_size = usedspace };
+        };
+
+        if (right_pid_check.err == ErrType::None) {
+          // Copy all data from the second arg page to the first arg page because that is easier.
+          LeafPage::MergePages(child_pid, right_pid_check);
+          InternalPage::DeleteKeyAndChildPtr(page, right_pid_check.value, child_pid);
+          uint16_t usedspace;
+          bool underflow_happened = InternalPage::CheckUnderflow(page, usedspace);
+          return { .underflown = underlow_happened, .page_type = PageType::InternalPage, .current_size = usedspace };
+        };
+      } else {
+        // return 0 cause it is not relevant
+        return { .underflown = false, .page_type = PageType::InternalPage, .current_size = 0 };
+      };
+    } else {
+      if (report.underflown) {
+
+        Result<PageID> left_pid_check = InternalPage::GetInternalLeftSibling(page, child_pid);
+
+        if (left_pid_check.err == ErrType::None) {
+          uint16_t needed = (INTERNAL_UNDERFLOW_THRESHOLD + 1) - report.current_size;
+          // Can i borrow from the left sibling more than or equal to needed data?
+          BorrowQuery borrow_query_report = InternalPage::CanLend(left_pid_check.value, needed);
+
+          if (borrow_query_report.can_borrow) {
+            InternalPage::HandleLeftBorrow(page, child_pid, borrow_query_report);
+            // return 0 cause its not relevant
+            return { .underflown = false, .page_type = PageType::InternalPage, .current_size = 0 }
+          };
+        };
+
+        Result<PageID> right_pid_check = InternalPage::GetLeafLeftSibling(page, child_pid);
+
+        if (right_pid_check.err == ErrType::None) {
+          uint16_t needed = (LEAF_UNDERFLOW_THRESHOLD + 1) - report.current_size;
+          // Can i borrow from the left sibling more than or equal to needed data?
+          BorrowQuery borrow_query_report = LeafPage::CanLendFromLeft(right_pid_check.value, needed);
+
+          if (borrow_query_report.can_borrow) {
+            LeafPage::HandleRightBorrow(borrow_query_report);
+
+            return { .underflown = false, .page_type = PageType::InternalPage, .current_size = 0 }
+          };
+        };
+
+        // Now we must merge
+        if (left_pid_check.err == ErrType::None) {
+
+          InternalPage::DeletePartitionKeyAndChildPtr(page, left_pid_check.value, child_pid);
+          // Copy all data from the second arg page to the first arg page because that is easier.
+          InternalPage::MergePages(key_value, left_pid_check.value, child_pid);
+          InternalPage::CheckUnderflow(page);
+          // return appropriate response here: underflow or no-underflow
+          uint16_t usedspace = InternalPage::UsedSpace(page);
+          return { .underflown = underlow_happened, .page_type = PageType::InternalPage, .current_size = usedspace };
+        };
+
+        if (right_pid_check.err == ErrType::None) {
+
+          InternalPage::DeletePartitionKeyAndChildPtr(page, left_pid_check.value, child_pid);
+          // Copy all data from the second arg page to the first arg page because that is easier.
+          LeafPage::MergePages(key_value, child_pid, right_pid_check.value);
+          InternalPage::CheckUnderflow(page);
+          // return appropriate response here: underflow or no-underflow
+          uint16_t usedspace = InternalPage::UsedSpace(page);
+          return { .underflown = underlow_happened, .page_type = PageType::InternalPage, .current_size = usedspace };
+        };
+      } else {
+        // return 0 cause it is not relevant
+        return { .underflown = false, .page_type = PageType::InternalPage, .current_size = 0 };
+      };
+    }
+  } else {
+    // leaf page
+    LeafPage::DeleteTuple(page, key);
+
+    uint16_t freespace = LeafPage::CheckUsableFreeSpace(page) + LeafPage::CheckGarbageBytes(page);
+    uint16_t usedspace = LEAF_PAGE_USABLE_SPACE - freespace;
+
+    if (usedspace <= LEAF_PAGE_UNDERFLOW_THRESHOLD) {
+      return { .underflown = true, .page_type = PageType::LeafPage, .current_size = usedspace };
+    } else {
+      return { .underflown = false, .page_type = PageType::LeafPage, .current_size = usedspace };
+    }
+  }
+};
+
+
 

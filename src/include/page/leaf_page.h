@@ -28,14 +28,21 @@
  *
  */
 
-constexpr uint16_t LEAF_PAGE_HEADER_SIZE = 11;
-constexpr uint16_t SLOT_SIZE = 4;
+constexpr uint16_t LEAF_PAGE_HEADER_SIZE = 13;
+constexpr uint16_t SLOT_SIZE = 5;
 constexpr uint16_t OVERFLOW_PAGE_HEADER_SIZE = 6;
 constexpr uint16_t OVERFLOW_PAGE_OVERFLOW_INFO_OFFSET = 3;
 constexpr uint16_t OVERFLOW_TUPLE_DATA_SIZE_MAX = 1280;
 constexpr uint16_t TUPLE_HEADER_SIZE = 7;
-constexpr uint16_t MIN_LEAF_PAGE_DATA = 128 - TUPLE_HEADER_SIZE - SLOT_SIZE;
-constexpr uint16_t MAX_LEAF_PAGE_DATA = 1280 - TUPLE_HEADER_SIZE - SLOT_SIZE;
+constexpr uint16_t MIN_LEAF_PAGE_DATA = 128;
+
+// Page underflow if it is less than or equal to this.
+// This threshold makes sure we can always merge underflow node and a node that will underflow if we borrow from it.
+constexpr uint16_t LEAF_UNDERFLOW_THRESHOLD = 2 * (PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) / 5;
+
+// The tuple overflow if the size of its payload is bigger than this. The slot size and the tuple header size
+// are subtracted because this threshold looks at the payload only.
+constexpr uint16_t MAX_LEAF_PAGE_DATA = (UNDERFLOW_THRESHOLD / 2);
 
 struct __attribute__((__packed__)) OverflowInfo {
   Bool overflow;
@@ -49,6 +56,7 @@ struct __attribute__((__packed__)) TupleHeader {
 };
 
 struct __attribute__((__packed__)) SlotArrayElement {
+  Bool is_deleted;
   PageOffset offset;
   uint16_t length;
 };
@@ -70,6 +78,8 @@ struct __attribute__((__packed__)) LeafPageHeader {
   PageOffset free_space_end_offset;
   // slot array size
   uint16_t slot_array_size;
+  // garbage bytes
+  uint16_t garbage_bytes;
   // sibling prev pageid
   PageID left_pid;
   // sibling next pageid
@@ -118,4 +128,27 @@ namespace LeafPage {
   Key GetKeyFromSlotElement(Byte* page, SlotArrayElement* element); 
   Offset ReadPage(Byte* page, Byte* buffer, size_t n, Offset start_offset, Offset max_offset);
   uint32_t GetTupleSizeFromSlotElement(Byte* page, SlotArrayElement* element);
+  
+  WriteStatus WriteChunkLeaf(Byte* page, const Byte* buffer, BufferSize buffer_size, Key key);
+  WriteStatus WriteChunkOverflow(Byte* page, const Byte* buffer, BufferSize buffer_size);
+
+  uint16_t GetCurrentUsedSpace(Byte* page);
+  BorrowQuery CanLendFromRight(PageID pid, uint16_t needed);
+  BorrowQuery CanLendFromLeft(PageID pid, uint16_t needed);
+  Key HandleLeftBorrow(PageID pid, BorrowQuery borrow_report);
+  Key HandleRightBorrow(PageID pid, BorrowQuery borrow_report);
+
+  void MergePages(PageID to_page, PageID from_page);
+
+
+
+
+
+
+
+
+
+
+
+
 };

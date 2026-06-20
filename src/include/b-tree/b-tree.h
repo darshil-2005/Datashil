@@ -54,8 +54,6 @@ class BTree {
 
   bool InsertTuple(const Byte* buffer, BufferSize buffer_size, Key key);
   SplitReport FindPageToWrite(PageID pid, Key key, BufferSize buffer_size, NewPage *to_write_page);
-  WriteStatus WriteChunkLeaf(Byte* page, const Byte* buffer, BufferSize buffer_size, Key key);
-  WriteStatus WriteChunkOverflow(Byte* page, const Byte* buffer, BufferSize buffer_size);
   PayloadStream Search(PageID pid, Key key);
   PageID GetRootPageID() const;
 };
