@@ -36,20 +36,19 @@ BufferPool::~BufferPool() {
   };
 };
 
-void BufferPool::DumpCurrBufferPool() {
+int BufferPool::DumpCurrBufferPool(bool p) {
 
   int cnt = 0;
   for (int i=0; i<POOL_SIZE; i++) {
     if (buffer_pool_meta[i].pin_count > 0) {
-      std::cout << buffer_pool_meta[i].page_id << ", ";
+      if (p) std::cout << buffer_pool_meta[i].page_id << ", ";
       // std::cout << "Pin Count: " << buffer_pool_meta[i].pin_count << std::endl;
       // std::cout << "Reference Bit: " << static_cast<int>(buffer_pool_meta[i].reference_bit) << std::endl;
       cnt++;
     };
   };
-  std::cout<<std::endl;
-  std::cout << cnt << std::endl;
-  std::cout << std::endl;
+  if (p) std::cout << std::endl << cnt << std::endl;
+  return cnt;
 };
 
 Result<OffsetIndex> BufferPool::FindPageToEvict() {

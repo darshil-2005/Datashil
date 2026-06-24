@@ -313,6 +313,7 @@ void LeafPage::DumpPage(Byte *page) {
       std::cout << *reinterpret_cast<uint16_t *>(page + slot_array[i].offset + TUPLE_HEADER_SIZE) << " ";
     };
   };
+  std::cout << "\n=========================================" << std::endl;
 };
 
 SearchResult LeafPage::Search(Byte* page, Key key) {
@@ -437,14 +438,7 @@ WriteStatus LeafPage::WriteChunkLeaf(Byte* page, Byte *buffer, BufferSize buffer
   
   if (data_size <= total_space) {
     if (data_size > available_space) {
-      /*
-      std::cout << "Defragmenting" << std::endl;
-      LeafPage::DumpPage(page);
       LeafPage::DefragmentPage(page);
-      LeafPage::DumpPage(page);
-      std::cout << "\n\n" << std::endl;
-      */
-      LeafPage::DumpPage(page);
     };
 
     uint16_t payload_size = data_size - SLOT_SIZE;
@@ -705,8 +699,8 @@ void LeafPage::MergePages(Byte* to_page, Byte* from_page) {
 
   to_header->right_pid = from_header->right_pid;
 
-  std::cout << to_header->right_pid << std::endl;
-  std::cout << to_header->slot_array_size<< std::endl;
+  // std::cout << to_header->right_pid << std::endl;
+  // std::cout << to_header->slot_array_size<< std::endl;
   // Iterate over the from_page slot and tuple, then insert each of them into the to_page.
   // First insert the slot properly.
   // Then insert the data using the write_chunk function.
@@ -722,14 +716,22 @@ void LeafPage::MergePages(Byte* to_page, Byte* from_page) {
     if (element->is_deleted > 0) continue;
     
     Key key = LeafPage::GetKeyFromSlotElement(from_page, element); 
+
+    uint16_t freespace = LeafPage::CheckGarbageBytes(to_page) + CheckAvailableSpace(to_page);
+
+    if (freespace < element->length + SLOT_SIZE) {
+      throw std::runtime_error("[FATAL] Trying to merge pages but too much data to put into a page.\n");
+      std::exit(1);
+    };
+    
     LeafPage::WriteChunkLeaf(to_page,
         from_page + element->offset + TUPLE_HEADER_SIZE,
         element->length - TUPLE_HEADER_SIZE,
         key, reinterpret_cast<TupleHeader*>(from_page + element->offset));
   };
 
-  std::cout << to_header->right_pid << std::endl;
-  std::cout << to_header->slot_array_size<< std::endl;
+  // std::cout << to_header->right_pid << std::endl;
+  // std::cout << to_header->slot_array_size<< std::endl;
   return;
 };
 

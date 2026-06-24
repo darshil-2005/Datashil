@@ -88,11 +88,15 @@ Bool InternalPage::InsertKeyValue(Byte* page, Key boundary_key, PageID new_pid) 
   return 1;
 };
 
-Key InternalPage::HandleSplit(Byte* old_page, Byte* new_page, Key key_to_insert, PageID page_id_to_insert) {
+// uint64_t boundary_key = InternalPage::HandleSplit(page, new_page.ptr, report.boundary_key, report.new_page_id);
+Key InternalPage::HandleSplit(Byte* old_page, Byte* new_page, Key key_to_insert, PageID page_id_to_insert, PageID new_page_id) {
 
   Key temp_keys[NUM_KEY_SLOTS + 1];
   PageID temp_ptrs[NUM_CHILD_PAGEID_SLOTS + 1];
+
   InternalPageHeader* page_header = reinterpret_cast<InternalPageHeader*>(old_page);
+  PageID old_page_id = page_header->page_id;
+
   Key* key_start = InternalPage::GetKeysStartPointer(old_page);
   Key* ptr_start = InternalPage::GetChildrenStartPointer(old_page);
 
@@ -116,12 +120,11 @@ Key InternalPage::HandleSplit(Byte* old_page, Byte* new_page, Key key_to_insert,
   };
 
   *insertion_it = page_id_to_insert;
-
   uint64_t new_keys_length = page_header->num_keys + 1; 
-
   Key* boundary_key = temp_keys + (new_keys_length / 2);
-  InternalPage::MakePage(old_page, temp_keys, temp_ptrs, (new_keys_length / 2), page_header->page_id);
-  InternalPage::MakePage(new_page, boundary_key + 1, temp_ptrs + (new_keys_length / 2) + 1, ((new_keys_length - 1) / 2), page_id_to_insert);
+
+  InternalPage::MakePage(old_page, temp_keys, temp_ptrs, (new_keys_length / 2), old_page_id);
+  InternalPage::MakePage(new_page, boundary_key + 1, temp_ptrs + (new_keys_length / 2) + 1, ((new_keys_length - 1) / 2), new_page_id);
 
   return *boundary_key;  
 };
@@ -129,23 +132,17 @@ Key InternalPage::HandleSplit(Byte* old_page, Byte* new_page, Key key_to_insert,
 // ALERT: This might overwrite the keys into the space for child ptr and write child_ptr over the boundary of the page.
 Bool InternalPage::MakePage(Byte* page, Key* keys_ptr, PageID* children_ptr, uint16_t keys_to_take, PageID pid) {
 
-  Byte* curr = page;
-  *curr = static_cast<Byte>(PageType::InternalPage);
+  InternalPageHeader* page_header = reinterpret_cast<InternalPageHeader*>(page);
 
-  curr = curr + sizeof(PageType::InternalPage);
-  // correction
-  memcpy(curr, &pid, sizeof(PageID));
+  page_header->page_type = PageType::InternalPage;
+  page_header->page_id = pid;
+  page_header->num_keys = keys_to_take;
 
-  curr = curr + sizeof(PageID);
-  memcpy(curr, &keys_to_take, sizeof(uint16_t)); 
+  Key* keys_start = InternalPage::GetKeysStartPointer(page);
+  PageID* childptrs_start = InternalPage::GetChildrenStartPointer(page);
 
-  curr = curr + sizeof(uint16_t);
-  memcpy(curr, keys_ptr, (keys_to_take * sizeof(Key*)));
-
-  curr = curr + sizeof(Key*) * NUM_KEY_SLOTS;
-  memcpy(curr, children_ptr, sizeof(PageID) * (keys_to_take + 1));
-
-  InternalPageHeader* ph = reinterpret_cast<InternalPageHeader*>(page);
+  memcpy(keys_start, keys_ptr, keys_to_take * sizeof(Key));
+  memcpy(childptrs_start, children_ptr, sizeof(PageID) * (keys_to_take + 1));
   
   return 1;
 };
@@ -209,30 +206,6 @@ void InternalPage::SetNewBoundaryKey(Byte* page, Key new_boundary_key, PageID le
   *key_ptr = new_boundary_key;
 };
 
-void InternalPage::DeleteKeyAndChildPtr(Byte* page, PageID merged_page, PageID absorbing_page) {
-
-  InternalPageHeader* page_header = reinterpret_cast<InternalPageHeader*>(page);
-
-  Key* key_ptr;
-  key_ptr = InternalPage::FindKeyFromChildren(page, absorbing_page, merged_page);
-
-  Key key = *key_ptr;
-  Key* keys_start = InternalPage::GetKeysStartPointer(page);
-  Key* keys_end = keys_start + page_header->num_keys;
-  Key* iter_key = std::lower_bound(keys_start, keys_end, key);
-  
-  if (keys_end - iter_key > 1) memmove(iter_key, iter_key + 1, keys_end - iter_key - 1);
-
-  PageID* childptr_start = InternalPage::GetChildrenStartPointer(page);
-  PageID* childptr_end = childptr_start + page_header->num_keys + 1;
-
-  PageID* iter_child = std::find(childptr_start, childptr_end, merged_page);
-
-  if (childptr_end - iter_child > 1) memmove(iter_child, iter_child + 1, childptr_end - iter_child - 1);
-  page_header->num_keys--;
-
-  return;  
-};
 
 
 bool InternalPage::CheckUnderflow(Byte* page, uint16_t &usedspace) {
@@ -437,4 +410,31 @@ Key InternalPage::DeletePartitionKeyAndChildPtr(Byte* page, PageID left_child_pi
   page_header->num_keys--;
 
   return partition_key;
+};
+
+void InternalPage::DeleteKeyAndChildPtr(Byte* page, PageID absorbing_page, PageID merged_page) {
+
+  // absorbing page | merged page
+
+  InternalPageHeader* page_header = reinterpret_cast<InternalPageHeader*>(page);
+
+  Key* key_ptr;
+  key_ptr = InternalPage::FindKeyFromChildren(page, absorbing_page, merged_page);
+
+  Key key = *key_ptr;
+  Key* keys_start = InternalPage::GetKeysStartPointer(page);
+  Key* keys_end = keys_start + page_header->num_keys;
+  Key* iter_key = std::lower_bound(keys_start, keys_end, key);
+  
+  if (keys_end - iter_key > 1) memmove(iter_key, iter_key + 1, sizeof(Key) * (keys_end - iter_key - 1));
+
+  PageID* childptr_start = InternalPage::GetChildrenStartPointer(page);
+  PageID* childptr_end = childptr_start + page_header->num_keys + 1;
+
+  PageID* iter_child = std::find(childptr_start, childptr_end, merged_page);
+
+  if (childptr_end - iter_child > 1) memmove(iter_child, iter_child + 1, sizeof(Key) * (childptr_end - iter_child - 1));
+  page_header->num_keys--;
+
+  return;  
 };

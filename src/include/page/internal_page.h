@@ -35,13 +35,12 @@ namespace InternalPage {
   PageID* GetChildrenStartPointer(Byte* page);
   PageID GetValueAtIndex(Byte* page, OffsetIndex index);
   // Splits the keys in 
-  Key HandleSplit(Byte* old_page, Byte* new_page, Key key_to_insert, PageID page_id_to_insert);
+  Key HandleSplit(Byte* old_page, Byte* new_page, Key key_to_insert, PageID page_id_to_insert, PageID new_page_id);
   Bool InsertKeyValue(Byte* page, Key boundary_key, PageID new_pid);
   Bool MakePage(Byte* page, Key* keys_ptr, PageID* children_ptr, uint16_t keys_to_take, PageID pid); 
   Key* FindKeyFromChildren(Byte* page, PageID left_pid, PageID right_pid);
   void SetNewBoundaryKey(Byte* page, Key new_boundary_key, PageID left_pid, PageID right_pid);
 
-  void DeleteKeyAndChildPtr(Byte* page, PageID merged_page, PageID absorbing_page);
   bool CheckUnderflow(Byte* page, uint16_t &usedspace);
 
   Result<PageID> GetLeafLeftSibling(Byte* page, PageID pid);
@@ -56,6 +55,8 @@ namespace InternalPage {
   void HandleRightBorrow(Byte* page, Byte* borrower_page, Byte* lender_page, BorrowQuery borrow_report);
 
   Key DeletePartitionKeyAndChildPtr(Byte* page, PageID left_child_pid, PageID right_child_pid);
+  void DeleteKeyAndChildPtr(Byte* page, PageID absorbing_page, PageID merged_page);
+
   void MergePages(Key partition_key, Byte* absorber_page, Byte* absorbee_page);
 
   void DumpPage(Byte* page);

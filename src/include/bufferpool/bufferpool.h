@@ -25,7 +25,7 @@ class BufferPool {
   Result<Byte*> RequestPage(PageID pid);
   Result<bool> ReleasePage(PageID pid, bool is_dirty);
   Result<NewPage> AllocateNewPage();
-  void DumpCurrBufferPool();
+  int DumpCurrBufferPool(bool p = true);
 
   Byte* buffer_pool;
 

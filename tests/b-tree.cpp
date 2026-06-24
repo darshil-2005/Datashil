@@ -64,15 +64,16 @@ TEST_CASE("Insert function properly inserts small and large tuples with strict i
   BufferPool bf(sm);
   BTree bt(bf, 0);
 
+  std::cout << "Before Insert: \n";
+  bf.DumpCurrBufferPool();
+
   Byte buffer[100000];
 
   int num_records = 60000;
 
   for (int i=0; i<num_records; i++) {
-
     memcpy(buffer, &dataset.keys[i], sizeof(Key));
     memcpy(buffer + sizeof(Key), dataset.payloads[i].data(), dataset.payloads[i].size());
-
     REQUIRE(bt.InsertTuple(buffer, dataset.payloads[i].size() + sizeof(Key), dataset.keys[i]) == true);
   };
 
@@ -90,9 +91,6 @@ TEST_CASE("Insert function properly inserts small and large tuples with strict i
   };
 
   std::cout << "ROOT PAGE ID: " << bt.root_page_id << std::endl;
-  
-  // DumpPage2(bf.RequestPage(25240).value);
-  // bf.ReleasePage(25240, false);
 };
 
 TEST_CASE("BTree maintains persistence normal.", "[b-tree][read-normal]") {
@@ -375,21 +373,156 @@ TEST_CASE("Defragmentation works", "[b-tree][defrag]") {
     REQUIRE(bt.InsertTuple(buffer, dataset.payloads[i].size() + sizeof(Key), dataset.keys[i]) == true);
   };
 
+  std::cout << "Root ID: " << bt.root_page_id << "\n";
+
   int nd = 10;
   for (int i=0; i < nd; i++) {
     bt.Delete(bt.root_page_id, dataset.keys[i]);
   };
 
-  std::cout << "LOLOLOL2" << std::endl;
-  Byte* page = bf.RequestPage(2).value;
-  LeafPage::DumpPage(page);
+  Byte* page = bf.RequestPage(bt.root_page_id).value;
   LeafPage::DefragmentPage(page);
-  std::cout << "LOLOLOL" << std::endl;
-  LeafPage::DumpPage(page);
-  bf.ReleasePage(2, false);
+  bf.ReleasePage(bt.root_page_id, true);
+
+  Byte result[100000];
+  for (int i=0; i<num_records; i++) {
+    size_t n = dataset.payloads[i].size() + sizeof(Key);
+
+    PayloadStream stream = bt.Search(bt.root_page_id, dataset.keys[i]);
+    if (i<nd) {
+      REQUIRE(stream.curr_pid == 0);
+      continue;
+    };
+    stream.NextBytes(result, n);
+    std::string recovered(reinterpret_cast<char*>(result + sizeof(Key)), n - sizeof(Key));
+
+    REQUIRE(recovered.size() == dataset.payloads[i].size());
+    int diff = memcmp(result + sizeof(Key), dataset.payloads[i].data(), dataset.payloads[i].size());
+    if (diff!=0) {
+
+    };
+    REQUIRE(diff == 0);
+  };
 };
 
-TEST_CASE("Merge works", "[b-tree][delete][leaf_merge]") {
+TEST_CASE("Delete from left works", "[b-tree][delete][merge][delete_left]") {
+
+  TestDataset dataset = LoadBulkTestData("tests/data/btree_test_load.csv");
+  REQUIRE(dataset.keys.size() == 60000);
+  
+  if (fs::exists(DATA_DIR)) {
+    fs::remove_all(DATA_DIR);
+  };
+  
+  StorageManager sm;
+  REQUIRE(sm.Bootstrap() == true);
+  BufferPool bf(sm);
+  BTree bt(bf, 0);
+
+  Byte buffer[100000];
+  int num_records = 60000;
+
+  std::cout << "Before Insert: " << bf.DumpCurrBufferPool() << std::endl;
+  for (int i=0; i<num_records; i++) {
+    memcpy(buffer, &dataset.keys[i], sizeof(Key));
+    memcpy(buffer + sizeof(Key), dataset.payloads[i].data(), dataset.payloads[i].size());
+    REQUIRE(bt.InsertTuple(buffer, dataset.payloads[i].size() + sizeof(Key), dataset.keys[i]) == true);
+  };
+
+  int nd = 30000;
+
+  std::cout << "After Insert: " << bf.DumpCurrBufferPool() << std::endl;
+
+  for (int i=0; i < nd; i++) {
+    int b = bf.DumpCurrBufferPool(false);
+    bt.Delete(bt.root_page_id, dataset.keys[i]);
+    int a = bf.DumpCurrBufferPool(false);
+    if (a!=b) {
+      std::cout << "Problem Key: " << dataset.keys[i] << std::endl;
+    };
+  };
+
+  std::cout << "After Delete: " << bf.DumpCurrBufferPool() << std::endl;
+
+  Byte result[100000];
+  for (int i=0; i<num_records; i++) {
+    size_t n = dataset.payloads[i].size() + sizeof(Key);
+
+    PayloadStream stream = bt.Search(bt.root_page_id, dataset.keys[i], false);
+
+    if (i < nd) {
+      REQUIRE(stream.curr_pid == 0);
+      continue;
+    };
+
+    stream.NextBytes(result, n);
+    std::string recovered(reinterpret_cast<char*>(result + sizeof(Key)), n - sizeof(Key));
+
+    REQUIRE(recovered.size() == dataset.payloads[i].size());
+    int diff = memcmp(result + sizeof(Key), dataset.payloads[i].data(), dataset.payloads[i].size());
+    if (diff!=0) {
+
+    };
+    REQUIRE(diff == 0);
+  };
+
+  std::cout << "Root Key: " << bt.root_page_id << std::endl;
+};
+
+TEST_CASE("Delete from right works", "[b-tree][delete][merge][delete_right]") {
+
+  TestDataset dataset = LoadBulkTestData("tests/data/btree_test_load_small.csv");
+  REQUIRE(dataset.keys.size() == 60000);
+  
+  if (fs::exists(DATA_DIR)) {
+    fs::remove_all(DATA_DIR);
+  };
+  
+  StorageManager sm;
+  REQUIRE(sm.Bootstrap() == true);
+  BufferPool bf(sm);
+  BTree bt(bf, 0);
+
+  Byte buffer[100000];
+  int num_records = 60000;
+
+  for (int i=0; i<num_records; i++) {
+    memcpy(buffer, &dataset.keys[i], sizeof(Key));
+    memcpy(buffer + sizeof(Key), dataset.payloads[i].data(), dataset.payloads[i].size());
+
+    REQUIRE(bt.InsertTuple(buffer, dataset.payloads[i].size() + sizeof(Key), dataset.keys[i]) == true);
+  };
+
+  int nd = 30000;
+
+  for (int i=num_records-1; i >= num_records - nd; i--) {
+    bt.Delete(bt.root_page_id, dataset.keys[i]);
+  };
+
+  Byte result[100000];
+  for (int i=0; i<num_records; i++) {
+    size_t n = dataset.payloads[i].size() + sizeof(Key);
+
+    PayloadStream stream = bt.Search(bt.root_page_id, dataset.keys[i], false);
+
+    if (i >= num_records - nd) {
+      REQUIRE(stream.curr_pid == 0);
+      continue;
+    };
+
+    stream.NextBytes(result, n);
+    std::string recovered(reinterpret_cast<char*>(result + sizeof(Key)), n - sizeof(Key));
+
+    REQUIRE(recovered.size() == dataset.payloads[i].size());
+    int diff = memcmp(result + sizeof(Key), dataset.payloads[i].data(), dataset.payloads[i].size());
+    if (diff!=0) {
+
+    };
+    REQUIRE(diff == 0);
+  };
+};
+
+TEST_CASE("Delete works for random deletes.", "[b-tree][delete][merge][delete_random]") {
 
   TestDataset dataset = LoadBulkTestData("tests/data/btree_test_load_small.csv");
   REQUIRE(dataset.keys.size() == 60000);
@@ -413,29 +546,21 @@ TEST_CASE("Merge works", "[b-tree][delete][leaf_merge]") {
     REQUIRE(bt.InsertTuple(buffer, dataset.payloads[i].size() + sizeof(Key), dataset.keys[i]) == true);
   };
 
-  int nd = 500;
+  int nd = 100;
 
-  for (int i=0; i < nd; i++) {
+  for (int i=999; i >= num_records - nd; i--) {
     bt.Delete(bt.root_page_id, dataset.keys[i]);
   };
 
   std::cout << "ROOT PAGE ID: " << bt.root_page_id << std::endl;
 
-  /*
-  LeafPage::DumpPage(bf.RequestPage(2).value);
-  bf.ReleasePage(2, false);
-  */
-  std::cout << "\n";
-
   Byte result[100000];
   for (int i=0; i<num_records; i++) {
     size_t n = dataset.payloads[i].size() + sizeof(Key);
 
-    PayloadStream stream = bt.Search(bt.root_page_id, dataset.keys[i]);
-    if (i < nd) {
-      if (stream.curr_pid != 0) {
-        std::cout << "INDEX: " << i << std::endl;
-      };
+    PayloadStream stream = bt.Search(bt.root_page_id, dataset.keys[i], false);
+
+    if (i >= num_records - nd) {
       REQUIRE(stream.curr_pid == 0);
       continue;
     };
