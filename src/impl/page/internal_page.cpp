@@ -287,6 +287,7 @@ void InternalPage::HandleLeftBorrow(Byte* page, Byte* borrower_page, Byte* lende
   InternalPageHeader* lender_header = reinterpret_cast<InternalPageHeader*>(lender_page);
   InternalPageHeader* borrower_header = reinterpret_cast<InternalPageHeader*>(borrower_page);
 
+  // check
   Key* parent_rotation_key_ptr = InternalPage::FindKeyFromChildren(page, lender_header->page_id, borrower_header->page_id);
 
   InternalPageHeader* page_header = reinterpret_cast<InternalPageHeader*>(page);
@@ -303,7 +304,7 @@ void InternalPage::HandleLeftBorrow(Byte* page, Byte* borrower_page, Byte* lende
 
 
   Key* lender_key_start = InternalPage::GetKeysStartPointer(lender_page);
-  Key* lender_key_end = lender_key_start + borrower_header->num_keys;
+  Key* lender_key_end = lender_key_start + lender_header->num_keys;
   PageID* lender_childptr_start = InternalPage::GetChildrenStartPointer(lender_page);
   PageID* lender_childptr_end = lender_childptr_start + lender_header->num_keys + 1;
 
@@ -337,7 +338,7 @@ void InternalPage::HandleRightBorrow(Byte* page, Byte* borrower_page, Byte* lend
   PageID* borrower_childptr_end = borrower_childptr_start + borrower_header->num_keys + 1;
 
   Key* lender_key_start = InternalPage::GetKeysStartPointer(lender_page);
-  Key* lender_key_end = lender_key_start + borrower_header->num_keys;
+  Key* lender_key_end = lender_key_start + lender_header->num_keys;
   PageID* lender_childptr_start = InternalPage::GetChildrenStartPointer(lender_page);
   PageID* lender_childptr_end = lender_childptr_start + lender_header->num_keys + 1;
 
