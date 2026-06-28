@@ -9,9 +9,11 @@
 #include <unistd.h>
 #include <cstring>
 #include <stdexcept>
+#include <atomic>
+#include <exception>
 
 #include "../../commons/types.h"
-#include "../../include/utils/utils.h"
+#include "../../../../commons/src/include/utils/utils.h"
 #include "../../include/storageManager/storageManager.h"
 #include "../../include/bufferpool/bufferpool.h"
 #include "../../include/b-tree/b-tree.h"

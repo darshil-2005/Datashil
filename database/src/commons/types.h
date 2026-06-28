@@ -2,6 +2,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
+#include "./constants.h"
 
 using PageID = uint64_t;
 using SlotID = uint16_t;
@@ -44,6 +47,23 @@ enum class PageType : uint8_t {
     InvalidPage = 5,
 };
 
+enum class Command : uint8_t {
+  Invalid = 0,
+  Search = 1,
+  Insert = 2,
+  Delete = 3,
+  Quit = 4
+};
+
+struct Query {
+  bool valid;
+  Command command;
+  Key key;
+  std::vector<std::string> payload;
+
+  Query() : valid(false), command(Command::Invalid) {};  
+};
+
 struct WriteStatus {
   uint16_t written;
   Byte* overflow_info_store_address;
@@ -64,7 +84,7 @@ struct BorrowQuery {
 struct __attribute__((__packed__)) RequestHeader {
   uint32_t magic_number;
   uint32_t total_length;
-  uint8_t command;
+  Command command;
   uint32_t header_checksum;
 };
 
@@ -72,8 +92,23 @@ struct __attribute__((__packed__)) ResponseHeader {
   uint32_t magic_number;
   uint32_t total_length;
   uint8_t status_code;
-  uint8_t echo_command;
+  Command echo_command;
   uint32_t header_checksum;
+};
+
+struct Response {
+  ResponseHeader header;
+  std::vector<Byte> payload;
+
+  Response() {
+    header.echo_command = Command::Invalid;
+    header.magic_number = NETWORK_MAGIC_NUMBER;
+    header.header_checksum = 0;
+    header.status_code = 4;
+    header.total_length = sizeof(ResponseHeader);
+  };
+
+  Response(ResponseHeader response_header, std::vector<Byte> payload) : header(response_header), payload(std::move(payload)) {};
 };
 
 enum ErrType {

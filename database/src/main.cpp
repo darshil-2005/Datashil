@@ -13,6 +13,16 @@ int main(int argc, char* argv[]) {
 
   if (argc < 2) return 1;
   std::string DB_PATH(argv[1]);
+  std::string portno_str;
+  if (argc >= 3) portno_str = argv[2];
+  else portno_str = "";
+  int portno = 8080;
+
+  try {
+    portno = std::stoi(portno_str);
+  } catch (...) {
+    std::cout << "[Main] Invalid Port Number. Using the default portno: " << portno << "\n";
+  };
 
   struct sigaction sa = {};
   sa.sa_handler = handle_sigint;
