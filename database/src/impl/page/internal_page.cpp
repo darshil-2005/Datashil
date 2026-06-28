@@ -265,7 +265,6 @@ uint16_t InternalPage::CheckUsedSpace(Byte* page) {
 BorrowQuery InternalPage::CanLend(Byte* page, uint16_t needed) {
   
   uint16_t usedspace = InternalPage::CheckUsedSpace(page);
-  InternalPageHeader* page_header = reinterpret_cast<InternalPageHeader*>(page);
 
   // pair: key + childptr
   size_t one_pair_size = sizeof(Key) + sizeof(PageID);
@@ -289,8 +288,6 @@ void InternalPage::HandleLeftBorrow(Byte* page, Byte* borrower_page, Byte* lende
 
   // check
   Key* parent_rotation_key_ptr = InternalPage::FindKeyFromChildren(page, lender_header->page_id, borrower_header->page_id);
-
-  InternalPageHeader* page_header = reinterpret_cast<InternalPageHeader*>(page);
 
   Key* borrower_key_start = InternalPage::GetKeysStartPointer(borrower_page);
   Key* borrower_key_end = borrower_key_start + borrower_header->num_keys;
@@ -329,8 +326,6 @@ void InternalPage::HandleRightBorrow(Byte* page, Byte* borrower_page, Byte* lend
   InternalPageHeader* borrower_header = reinterpret_cast<InternalPageHeader*>(borrower_page);
 
   Key* parent_rotation_key_ptr = InternalPage::FindKeyFromChildren(page, borrower_header->page_id, lender_header->page_id);
-
-  InternalPageHeader* page_header = reinterpret_cast<InternalPageHeader*>(page);
 
   Key* borrower_key_start = InternalPage::GetKeysStartPointer(borrower_page);
   Key* borrower_key_end = borrower_key_start + borrower_header->num_keys;
@@ -374,9 +369,7 @@ void InternalPage::MergePages(Key partition_key, Byte* absorber_page, Byte* abso
   PageID* absorber_childptr_end = absorber_childptr_start + absorber_header->num_keys + 1;
 
   Key* absorbee_key_start = InternalPage::GetKeysStartPointer(absorbee_page);
-  Key* absorbee_key_end = absorbee_key_start + absorbee_header->num_keys;
   PageID* absorbee_childptr_start = InternalPage::GetChildrenStartPointer(absorbee_page);
-  PageID* absorbee_childptr_end = absorbee_childptr_start + absorbee_header->num_keys + 1;
 
   // Place the partition_key at the end of the absorber keys arr key_end
   memmove(absorber_key_end, &partition_key, sizeof(Key));

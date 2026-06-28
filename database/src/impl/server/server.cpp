@@ -295,10 +295,8 @@ int Server::Bootstrap(std::string DB_PATH) {
 };
 
 int Server::RunServer(int portno) {
-  int n;
   struct sockaddr_in serv_addr, cli_addr;
 
-  Byte buffer[1024];
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
   int opt = 1;
   setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));

@@ -107,7 +107,7 @@ Response Client::SendCommandAndFetchReply(Query query) {
   request_header.command = command;
   request_header.magic_number = NETWORK_MAGIC_NUMBER;
   request_header.total_length = sizeof(RequestHeader) + sizeof(Key);
-  for (int i = 0; i < payload.size(); i++) {
+  for (size_t i = 0; i < payload.size(); i++) {
     request_header.total_length += payload[i].size();
   };
 
@@ -115,7 +115,7 @@ Response Client::SendCommandAndFetchReply(Query query) {
   Client::WriteExactlyNBytes(sockfd, reinterpret_cast<const Byte*>(&request_header), sizeof(RequestHeader));
   Client::WriteExactlyNBytes(sockfd, reinterpret_cast<const Byte*>(&key), sizeof(Key));
 
-  for (int i=0; i<payload.size(); i++) {
+  for (size_t i=0; i<payload.size(); i++) {
     Client::WriteExactlyNBytes(sockfd, reinterpret_cast<const Byte*>(payload[i].data()), payload[i].size());
   };
 

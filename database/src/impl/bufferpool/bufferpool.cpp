@@ -10,21 +10,20 @@ BufferPool::BufferPool(StorageManager &sm_input) {
     throw::std::runtime_error("[FATAL ERROR] Not enough memory to initialize the bufferpool");
   };
 
-  for (int i = 0; i < POOL_SIZE; i++) {
+  for (size_t i = 0; i < POOL_SIZE; i++) {
     free_frames.push_back(i);
   };
 };
 
 BufferPool::~BufferPool() {
 
-  for (int index=0; index<POOL_SIZE; index++) {
+  for (size_t index=0; index<POOL_SIZE; index++) {
     BufferFrameMeta &frame_meta = buffer_pool_meta[index];
 
     if (frame_meta.is_dirty) {
       PageID pid = frame_meta.page_id;
       Offset offset = PAGE_SIZE * index;
-      Result<bool> write_status =
-          storage_manager->WritePage(pid, buffer_pool + offset);
+      storage_manager->WritePage(pid, buffer_pool + offset);
       frame_meta.is_dirty = false;
     };
   };
@@ -37,7 +36,7 @@ BufferPool::~BufferPool() {
 int BufferPool::GetTotalPinnedPages() {
 
   int cnt = 0;
-  for (int i=0; i<POOL_SIZE; i++) {
+  for (size_t i=0; i<POOL_SIZE; i++) {
     if (buffer_pool_meta[i].pin_count > 0) {
       cnt++;
     };
@@ -49,7 +48,7 @@ Result<OffsetIndex> BufferPool::FindPageToEvict() {
   ssize_t index = -1;
 
   size_t MAX_ITERS = 2 * unpinned_frames.size();
-  for (int i = 0; i < MAX_ITERS; i++) {
+  for (size_t i = 0; i < MAX_ITERS; i++) {
     if (unpinned_frames.empty()) break;
     index = unpinned_frames.front();
     unpinned_frames.pop();

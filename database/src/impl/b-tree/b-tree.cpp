@@ -74,7 +74,6 @@ bool BTree::Insert(const Byte *buffer, BufferSize buffer_size, Key key) {
 
   buffer = buffer + write_status.written;
   buffer_size = buffer_size - write_status.written;
-  PageID prev_pid = to_write_page.pid;
 
   while (buffer_size > 0) {
     Result<NewPage> new_page_response = buffer_pool->AllocateNewPage();
@@ -177,8 +176,6 @@ SplitReport BTree::FindPageToWrite(PageID pid, Key key, BufferSize buffer_size, 
         NewPage new_page = new_page_result.value;
 
         uint64_t boundary_key = InternalPage::HandleSplit(page, new_page.ptr, report.boundary_key, report.new_page_id, new_page.pid);
-
-        PageHeader* check_header = reinterpret_cast<PageHeader*>(new_page.ptr);
 
         buffer_pool->ReleasePage(pid, true);
         buffer_pool->ReleasePage(new_page.pid, true);

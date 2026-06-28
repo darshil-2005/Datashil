@@ -290,23 +290,6 @@ void LeafPage::DumpPage(Byte *page) {
   SlotArrayElement *slot_array =
       reinterpret_cast<SlotArrayElement *>(page + LEAF_PAGE_HEADER_SIZE);
   for (int i = 0; i < page_header->slot_array_size; i++) {
-    OverflowInfo *overflow_info =
-        reinterpret_cast<OverflowInfo *>(page + slot_array[i].offset);
-
-    // if (slot_array[i].is_deleted > 0) {
-    //   std::cout << "ELEMENT DELETED: " << i + 1 << std::endl;
-    // } else {
-    //   std::cout << "Tuple Offset: " << slot_array[i].offset << std::endl;
-    //   std::cout << "Tuple Length: " << slot_array[i].length << std::endl;
-    //   std::cout << "Tuple Overflow: "
-    //             << static_cast<int>(overflow_info->overflow) << std::endl;
-    //   std::cout << "Overflow Page: " << overflow_info->overflow_page
-    //             << std::endl;
-    //   std::cout << "Key: "
-    //             << *reinterpret_cast<uint16_t *>(page + slot_array[i].offset +
-    //                                              TUPLE_HEADER_SIZE)
-    //             << std::endl;
-    // };
 
     if (slot_array[i].is_deleted > 0) {
       std::cout << "D ";

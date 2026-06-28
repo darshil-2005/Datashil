@@ -51,7 +51,7 @@ void CLI::UseCLI(Client &client) {
         if (query_response.header.status_code == 1) {
           std::vector<std::string> parsed_payload = CLI::ParseResponsePayload(query_response.payload);
           std::cout << "===== RESPONSE ======" << std::endl;
-          for (int i=1; i<=parsed_payload.size(); i++) {
+          for (size_t i=1; i<=parsed_payload.size(); i++) {
             std::cout << i << ": " << parsed_payload[i-1] << std::endl;
           };
         } else {

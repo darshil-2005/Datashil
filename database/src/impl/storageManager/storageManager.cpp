@@ -48,7 +48,11 @@ bool StorageManager::Bootstrap(std::string DB_PATH) {
 bool StorageManager::IsDatabaseFile(int file_descriptor) {
 
   struct stat st;
-  if (fstat(fd_database, &st) == -1 || st.st_size < PAGE_SIZE) {
+
+  if (fstat(fd_database, &st) == -1) {
+    return false;
+  };
+  if (st.st_size < 0 || static_cast<size_t>(st.st_size) < PAGE_SIZE) {
     return false;
   };
 
