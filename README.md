@@ -1,15 +1,23 @@
 # Datashil
 
-Datashil is a lightweight, disk-based database engine written in modern C++. It implements a persistent B+ tree storage engine, a custom binary client/server protocol over TCP, and an interactive CLI for executing basic database operations. The project is designed to explore the core components of a database system, including storage management, indexing, buffering, and networking.
+A lightweight, disk-based database engine written in modern C++. The project was built to explore the design and implementation of database storage systems from first principles, with a focus on building a persistent index and the infrastructure required to manage data reliably on disk. It includes a custom storage engine, a TCP server, and a simple CLI for interacting with the database.
+
 
 ## Features
 
-- Persistent disk-backed B+ tree index
-- Slotted-page storage format with page defragmentation
-- Buffer pool for cached page management
-- TCP client/server architecture with a custom binary protocol
-- Interactive CLI supporting insert, search, and delete operations
-- Comprehensive Catch2 test suite covering persistence, insertion, search, deletion, and stress testing
+- Persistent disk-based B+ tree storage engine
+- Clustered index implementation
+- Slotted leaf pages for variable-sized tuples
+- Lazy deletion with on-demand page defragmentation
+- Automatic internal and leaf node splitting on overflow
+- Internal and leaf node redistribution and merging on underflow
+- Streaming payload interface for incremental tuple retrieval
+- Clock-Sweep replacement policy
+- Direct I/O (`O_DIRECT`) with aligned memory management, bypassing the Linux page cache
+- Page management and storage layer
+- TCP server exposing the storage engine over a custom binary protocol
+- Interactive CLI with a simple DFA query parser
+- Catch2-based test suite with generated datasets
 
 ## Repository Layout
 
@@ -105,3 +113,12 @@ Stress tests include:
 
 - Test data is stored in `database/tests/data/`.
 - Communication between the client and server uses a custom binary protocol with checksum validation.
+
+## Future Plans
+
+- Write-Ahead Logging (WAL) for crash recovery and durability
+- Concurrent B+ tree operations with page latching
+- Variable-sized key support
+- External merge sort for disk-resident datasets
+- Disk-based hash index
+- Free-page reclamation and database file compaction
