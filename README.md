@@ -76,7 +76,9 @@ delete <key>;
 ```
 
 **Example session:**
+<div>
 <img src="static/demonstration.png" width="500">
+</div>
 
 ## Tests
 
